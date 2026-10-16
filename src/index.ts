@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { discoverRoutes } from "./analyzer/routes.js";
+import { describeRoute } from "./analyzer/describe.js";
 const server = new McpServer({
   name: "mcp-api-tester",
   version: "0.1.0",
@@ -54,6 +55,39 @@ server.registerTool(
       return {
         isError: true,
         content: [{ type: "text", text: `list_routes failed: ${message}` }],
+      };
+    }
+  },
+);
+
+server.registerTool(
+  "describe_route",
+  {
+    description:
+      "Describes ONE route of an Express + Zod backend: URL path params, whether it likely needs auth, " +
+      "and the JSON Schema of the request body (read from the Zod schema used in validate(...)). " +
+      "Use list_routes first to see the routes.",
+    inputSchema: {
+      projectDir: z.string().describe("Absolute path to the backend folder"),
+      method: z.string().describe("HTTP method, e.g. POST"),
+      path: z
+        .string()
+        .describe(
+          "Route path exactly as list_routes shows it, e.g. /posts/:id/comments",
+        ),
+    },
+  },
+  async ({ projectDir, method, path }) => {
+    try {
+      const result = await describeRoute({ projectDir, method, path });
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        isError: true,
+        content: [{ type: "text", text: `describe_route failed: ${message}` }],
       };
     }
   },

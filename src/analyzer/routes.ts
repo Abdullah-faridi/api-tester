@@ -75,14 +75,28 @@ class Walker {
     if (this.seen.has(key)) return;
     this.seen.add(key);
 
-    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const callee = call.getExpression();
-      if (!Node.isPropertyAccessExpression(callee)) continue;
-      const target = callee.getExpression();
+    const nameNode = decl.getNameNode();
+    if (!Node.isIdentifier(nameNode)) return;
+    const refs = nameNode
+      .findReferencesAsNodes()
+      .sort(
+        (a, b) =>
+          a
+            .getSourceFile()
+            .getFilePath()
+            .localeCompare(b.getSourceFile().getFilePath()) ||
+          a.getStart() - b.getStart(),
+      );
+
+    for (const ref of refs) {
+      const callee = ref.getParent();
       if (
-        !Node.isIdentifier(target) ||
-        target.getSymbol()?.getValueDeclaration() !== decl
+        !Node.isPropertyAccessExpression(callee) ||
+        callee.getExpression() !== ref
       )
+        continue;
+      const call = callee.getParent();
+      if (!Node.isCallExpression(call) || call.getExpression() !== callee)
         continue;
 
       const name = callee.getName();
@@ -185,6 +199,27 @@ class Walker {
     );
     return [`<dynamic:${short(node.getText())}>`];
   }
+  private findSchema(middleware: Node[]) {
+    for (const m of middleware) {
+      if (!Node.isCallExpression(m)) continue;
+      const callee = m.getExpression();
+      if (!Node.isIdentifier(callee) || !/valid/i.test(callee.getText()))
+        continue;
+      const arg = m.getArguments()[0];
+      if (!arg || !Node.isIdentifier(arg)) continue;
+      let sym = arg.getSymbol();
+      if (sym?.isAlias()) sym = sym.getAliasedSymbol() ?? sym;
+      const decl = sym?.getValueDeclaration();
+      if (decl && Node.isVariableDeclaration(decl)) {
+        return {
+          name: decl.getName(),
+          file: this.rel(decl.getSourceFile().getFilePath()),
+          exported: decl.isExported(),
+        };
+      }
+    }
+    return undefined;
+  }
 
   private addRoute(
     method: string,
@@ -193,7 +228,9 @@ class Walker {
     handlerArgs: Node[],
     prefix: string,
   ) {
-    const middleware = handlerArgs.slice(0, -1).map((a) => short(a.getText()));
+    const middlewareNodes = handlerArgs.slice(0, -1);
+    const middleware = middlewareNodes.map((a) => short(a.getText()));
+    const bodySchema = this.findSchema(middlewareNodes);
     for (const p of paths) {
       this.routes.push({
         method: method.toUpperCase(),
@@ -204,6 +241,7 @@ class Walker {
         likelyRequiresAuth: middleware.some((m) =>
           /auth|jwt|protect|session|guard/i.test(m),
         ),
+        bodySchema,
       });
     }
   }
@@ -241,6 +279,13 @@ export function discoverRoutes({
     throw new Error(
       `No Express app found in ${root}. Looked for \`const x = express()\`` +
         (entryFile ? ` in ${entryFile}.` : " in every .ts file."),
+    );
+  }
+
+  if (walker.routes.length === 0) {
+    walker.warnings.add(
+      "Found an Express app but no routes. Routes may be registered inside a function that receives the app " +
+        "(e.g. registerRoutes(app)) or mounted in a way this tool does not follow yet.",
     );
   }
 

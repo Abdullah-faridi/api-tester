@@ -5,4 +5,5 @@ export interface DiscoveredRoute {
   line: number;
   middleware: string[];
   likelyRequiresAuth: boolean;
+  bodySchema?: { name: string; file: string; exported: boolean };
 }
