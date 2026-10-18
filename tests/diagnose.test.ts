@@ -49,3 +49,19 @@ test("connection refused is a network problem", () => {
     "network",
   );
 });
+
+test("expectStatus passes on an exact match", () => {
+  assert.equal(diagnose("any", result(409), false, [409]).category, "pass");
+});
+
+test("expectStatus flags a different status", () => {
+  assert.equal(
+    diagnose("any", result(200), false, [409]).category,
+    "test_assumption",
+  );
+});
+
+test("any accepts 4xx but not 5xx", () => {
+  assert.equal(diagnose("any", result(401), false).category, "pass");
+  assert.equal(diagnose("any", result(500), false).category, "app_bug");
+});

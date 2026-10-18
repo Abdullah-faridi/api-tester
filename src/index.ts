@@ -177,7 +177,15 @@ server.registerTool(
             headers: z.record(z.string(), z.string()).optional(),
             expect: expectEnum
               .optional()
-              .describe("What a correct server should do. Default: success"),
+              .describe(
+                "What a correct server should do. Default: success. 'any' accepts every status except 5xx.",
+              ),
+            expectStatus: z
+              .union([z.number().int(), z.array(z.number().int())])
+              .optional()
+              .describe(
+                "Exact status or statuses that count as a pass, e.g. 409. Overrides expect.",
+              ),
             save: z.record(z.string(), z.string()).optional(),
             auth: z.enum(["user", "none"]).optional(),
           }),
@@ -320,10 +328,14 @@ server.registerTool(
         })
         .optional(),
       sentAuth: z.boolean().optional(),
+      expectStatus: z
+        .array(z.number().int())
+        .optional()
+        .describe("Exact statuses that count as a pass"),
     },
     annotations: { readOnlyHint: true },
   },
-  async ({ expect, status, body, networkError, sentAuth }) => {
+  async ({ expect, status, body, networkError, sentAuth, expectStatus }) => {
     const result = {
       request: "",
       ok: status !== null && status < 400,
@@ -338,7 +350,7 @@ server.registerTool(
           }
         : undefined,
     };
-    return ok(diagnose(expect, result, sentAuth ?? false));
+    return ok(diagnose(expect, result, sentAuth ?? false, expectStatus));
   },
 );
 

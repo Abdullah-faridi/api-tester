@@ -1,4 +1,5 @@
 import { CallResult } from "../types/callResults.js";
+
 export type Category =
   | "pass"
   | "app_bug"
@@ -36,6 +37,7 @@ export function diagnose(
   expect: Expectation,
   result: CallResult,
   sentAuth: boolean,
+  expectStatus?: number[],
 ): Diagnosis {
   if (result.error) {
     if (result.error.kind === "timeout") {
@@ -60,6 +62,20 @@ export function diagnose(
   const status = result.status as number;
   const said = serverMessage(result.body);
   const suffix = said ? ` Server said: "${said}"` : "";
+
+  if (expectStatus && expectStatus.length > 0) {
+    if (expectStatus.includes(status)) return PASS;
+    if (status >= 500) {
+      return {
+        category: "app_bug",
+        reason: `Server error ${status}: the route crashed.${suffix}`,
+      };
+    }
+    return {
+      category: "test_assumption",
+      reason: `Expected status ${expectStatus.join(" or ")} but got ${status}.${suffix}`,
+    };
+  }
 
   if (status >= 500) {
     const when =
@@ -160,8 +176,6 @@ export function diagnose(
       };
 
     default:
-      return status < 400
-        ? PASS
-        : { category: "test_assumption", reason: `Status ${status}.${suffix}` };
+      return PASS;
   }
 }

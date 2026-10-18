@@ -231,10 +231,17 @@ export async function runBatch(options: BatchOptions) {
     });
     jar.store(result.setCookies);
 
+    const expectedStatuses =
+      request.expectStatus === undefined
+        ? undefined
+        : Array.isArray(request.expectStatus)
+          ? request.expectStatus
+          : [request.expectStatus];
     const diagnosis = diagnose(
       request.expect ?? "success",
       result,
       Boolean(token) || Boolean(cookie),
+      expectedStatuses,
     );
 
     const saved: string[] = [];

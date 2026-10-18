@@ -1,4 +1,4 @@
-import { Category, Expectation } from "../runner/diagnose.js";
+import { Expectation, Category } from "../runner/diagnose.js";
 export type Vars = Record<string, unknown>;
 
 export interface BatchRequest {
@@ -9,6 +9,7 @@ export interface BatchRequest {
   token?: string;
   headers?: Record<string, string>;
   expect?: Expectation;
+  expectStatus?: number | number[];
   save?: Record<string, string>;
   auth?: "user" | "none";
 }
