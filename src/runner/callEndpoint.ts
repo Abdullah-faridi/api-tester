@@ -1,27 +1,24 @@
+import { checkRequest } from "./safety.js";
 import { CallOptions } from "../types/callOptions.js";
+import { CallResult } from "../types/callResults.js";
+
 const MAX_BODY_CHARS = 4000;
-const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
-function assertAllowedHost(url: URL) {
-  const extra = (process.env.API_TESTER_ALLOWED_HOSTS ?? "")
-    .split(",")
-    .map((h) => h.trim())
-    .filter(Boolean);
-  if (![...LOCAL_HOSTS, ...extra].includes(url.hostname)) {
-    throw new Error(
-      `Host "${url.hostname}" is not allowed (localhost only by default). ` +
-        `To allow it, set the env var API_TESTER_ALLOWED_HOSTS=${url.hostname}`,
-    );
-  }
-}
+export const defaultBaseUrl = () =>
+  process.env.API_TESTER_BASE_URL ?? "http://localhost:3000";
 
-export async function callEndpoint(opts: CallOptions) {
+export async function callEndpoint(opts: CallOptions): Promise<CallResult> {
   if (!opts.path.startsWith("/"))
     throw new Error(`path must start with "/", got "${opts.path}"`);
 
-  const url = new URL(opts.path, opts.baseUrl ?? "http://localhost:3000");
+  const method = opts.method.toUpperCase();
+  const url = new URL(opts.path, opts.baseUrl ?? defaultBaseUrl());
+  checkRequest(url, method);
 
-  const headers: Record<string, string> = { ...opts.headers };
+  const headers: Record<string, string> = {
+    "X-API-Tester": "1",
+    ...opts.headers,
+  };
   const hasHeader = (name: string) =>
     Object.keys(headers).some((h) => h.toLowerCase() === name);
   if (opts.token && !hasHeader("authorization"))
@@ -29,14 +26,16 @@ export async function callEndpoint(opts: CallOptions) {
   if (opts.body !== undefined && !hasHeader("content-type"))
     headers["Content-Type"] = "application/json";
 
+  const label = `${method} ${url.pathname}${url.search}`;
+  const timeoutMs = opts.timeoutMs ?? 10000;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 10000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   const started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
 
   try {
     const res = await fetch(url, {
-      method: opts.method.toUpperCase(),
+      method,
       headers,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       signal: controller.signal,
@@ -46,32 +45,36 @@ export async function callEndpoint(opts: CallOptions) {
     let body: unknown = text === "" ? null : text;
     try {
       if (text !== "") body = JSON.parse(text);
-    } catch {}
-    if (text.length > MAX_BODY_CHARS)
+    } catch {
+      body = text;
+    }
+    if (text.length > MAX_BODY_CHARS) {
       body =
         text.slice(0, MAX_BODY_CHARS) +
         `...[truncated, ${text.length} chars total]`;
+    }
 
     return {
-      request: `${opts.method.toUpperCase()} ${url.pathname}${url.search}`,
+      request: label,
       ok: res.ok,
       status: res.status,
       durationMs: elapsed(),
       body,
+      setCookies: res.headers.getSetCookie(),
     };
   } catch (err) {
     const isTimeout = err instanceof Error && err.name === "AbortError";
-    const code = (err as { cause?: { code?: string } }).cause?.code;
+    const code = (err as { cause?: { code?: string } }).cause?.code ?? null;
     return {
-      request: `${opts.method.toUpperCase()} ${url.pathname}${url.search}`,
+      request: label,
       ok: false,
       status: null,
       durationMs: elapsed(),
       error: {
         kind: isTimeout ? "timeout" : "network",
-        code: code ?? null,
+        code,
         message: isTimeout
-          ? `No response within ${opts.timeoutMs ?? 10000}ms`
+          ? `No response within ${timeoutMs}ms`
           : (err as Error).message,
       },
     };
