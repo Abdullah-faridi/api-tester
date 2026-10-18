@@ -46,6 +46,8 @@ Restart Claude Desktop after every rebuild.
 
 Every request carries the header `X-API-Tester: 1` so test traffic is easy to spot. `run_workflow` creates real rows, so point the backend at a development database. It reports any created data that no DELETE route removes.
 
+![alt text](image.png)
+
 ## Limits
 
 - Routes registered inside a function that receives the app, such as `registerRoutes(app)`, are not followed.
